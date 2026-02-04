@@ -1,0 +1,84 @@
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+
+# -----------------------------
+# Load model
+# -----------------------------
+print("Loading AI model...")
+model_name = "distilgpt2"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name)
+
+# -----------------------------
+# Starting prompt
+# -----------------------------
+current_text = "The moon was shining very bright at night\n"
+
+# -----------------------------
+# Poem settings
+# -----------------------------
+max_lines = 4
+max_words_per_line = 9  #8 in the output
+lines = 1
+word_count = 0
+temperature = 0.9
+k = 15
+
+# -----------------------------
+# Generation loop
+# -----------------------------
+while lines < max_lines:
+    # Encode current text
+    input_ids = tokenizer.encode(current_text, return_tensors="pt")
+
+    # Run model to get logits
+    with torch.no_grad():
+        outputs = model(input_ids)
+        logits = outputs.logits
+
+    next_token_logits = logits[0, -1, :]
+
+    # Apply temperature
+    next_token_probs = torch.softmax(next_token_logits / temperature, dim=0)
+
+    # Top-k sampling
+    top_probs, top_indices = torch.topk(next_token_probs, k)
+    next_token_id = top_indices[torch.multinomial(top_probs, 1)]
+
+    # Decode token
+    next_word = tokenizer.decode([next_token_id.item()])
+
+    # Remove any model-generated newlines
+    next_word = next_word.replace("\n", "")
+
+    # Skip empty tokens
+    if next_word.strip() == "":
+        continue
+
+    # Append token to current text
+    if current_text.endswith("\n"):
+        current_text += next_word.lstrip()
+    else:
+        current_text += next_word
+
+    # Count only real words
+    word_count += 1
+
+    # Insert newline if word limit reached
+    if word_count >= max_words_per_line:
+        current_text += "\n"
+        lines += 1
+        word_count = 0
+
+    # Stop immediately if max lines reached
+    if lines > max_lines:
+        break
+
+# Ensure the last line has a newline if it was short
+if not current_text.endswith("\n"):
+    current_text += "\n"
+
+# -----------------------------
+# Print poem
+# -----------------------------
+print(current_text)
